@@ -49,6 +49,8 @@ def load_real_data():
             for idx in indices:
                 prod = str(df.iloc[row, idx[0]]).strip()
                 if prod == 'nan' or not prod: continue
+
+                if "출하가" in prod or "할인" in prod: continue
                 
                 unit = str(df.iloc[row, idx[1]]).strip()
                 if unit == 'nan': unit = "-"
