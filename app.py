@@ -40,41 +40,45 @@ def get_image_base64(image_path):
 @st.cache_data
 def load_real_data():
     try:
-        df = pd.read_csv("주문_템플릿.csv")
+        # 헤더(첫 줄)가 없거나 섞여있을 수 있으므로 header=None으로 안전하게 읽어옵니다.
+        df = pd.read_csv("주문_템플릿.csv", header=None, dtype=str)
         products = []
-        # CSV의 5개 단위를 순회하며 데이터 추출
-        indices = [(0,1,2,3), (5,6,7,8), (10,11,12,13), (15,16,17,18), (20,21,22,23)]
         
         for row in range(len(df)):
-            for idx in indices:
-                prod = str(df.iloc[row, idx[0]]).strip()
-                if prod == 'nan' or not prod: continue
-
-                if "출하가" in prod or "할인" in prod: continue
+            prod = str(df.iloc[row, 0]).strip()
+            
+            # 빈칸이거나 안내 문구(제품명 등)는 건너뜁니다.
+            if prod == 'nan' or not prod or "제품명" in prod or "종류" in prod or "에키나포스" in prod:
+                continue
                 
-                unit = str(df.iloc[row, idx[1]]).strip()
-                if unit == 'nan': unit = "-"
+            unit = str(df.iloc[row, 1]).strip()
+            if unit == 'nan' or not unit: 
+                unit = "EA"
+            
+            factory_price_raw = str(df.iloc[row, 2]).strip()
+            if factory_price_raw == 'nan': 
+                factory_price_raw = "-"
                 
-                factory_price_raw = str(df.iloc[row, idx[2]]).strip()
-                selling_price = str(df.iloc[row, idx[3]]).strip()
+            selling_price = str(df.iloc[row, 3]).strip()
+            if selling_price == 'nan': 
+                selling_price = "-"
+            
+            # 괄호 '(' 를 기준으로 출하가와 할인조건을 분리하여 표에서 예쁘게 보여줍니다.
+            base_price = factory_price_raw
+            discount_range = "-"
+            if '(' in factory_price_raw:
+                parts = factory_price_raw.split('(')
+                base_price = parts[0].strip()
+                discount_range = "(" + parts[1]
                 
-                # 할인구간 분리 (예: 4.2/4(30~))
-                factory_price = factory_price_raw
-                discount_range = "-"
-                if '(' in factory_price_raw:
-                    parts = factory_price_raw.split('(')
-                    factory_price = parts[0]
-                    discount_range = "(" + parts[1]
-                    
-                products.append({
-                    "제품명": prod,
-                    "주문단위": unit,
-                    "출하가": factory_price,
-                    "구간단가": discount_range,
-                    "판매가": selling_price,
-                    # 제품명과 동일한 이름의 이미지 파일을 매칭합니다 (예: images/인사돌100T.png)
-                    "이미지경로": f"images/{prod}.png" 
-                })
+            products.append({
+                "제품명": prod,
+                "주문단위": unit,
+                "출하가": base_price,
+                "구간단가": discount_range,
+                "판매가": selling_price,
+                "이미지경로": f"images/{prod}.png" 
+            })
         return pd.DataFrame(products)
     except Exception as e:
         st.error(f"데이터를 불러오는 데 실패했습니다: {e}")
