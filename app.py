@@ -1,92 +1,128 @@
 import streamlit as st
 import pandas as pd
+import os
+import base64
 
-# 1. 페이지 설정 (넓게 쓰기)
-st.set_page_config(page_title="맞춤형 제품 단가표", layout="wide")
+# 1. 페이지 설정
+st.set_page_config(page_title="동국제약 맞춤형 제품 단가표", layout="wide")
 
-# 2. 🖨️ 인쇄 최적화를 위한 마법의 CSS 코드
-# 웹에서 보이는 버튼이나 메뉴를 '인쇄' 시에는 모두 숨기고, 깔끔한 표만 나오게 만듭니다.
+# 2. 인쇄용 CSS 설정 (표 외의 버튼이나 메뉴는 인쇄 시 숨김)
 st.markdown("""
     <style>
     @media print {
-        /* 스트림릿 기본 메뉴, 사이드바, 여백 등 인쇄 시 숨기기 */
         header, footer, .stDeployButton, .no-print { display: none !important; }
         .stApp { background-color: white !important; }
-        
-        /* 인쇄될 표 스타일 */
         .print-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13pt; }
-        .print-table th, .print-table td { border: 1px solid #ccc; padding: 12px; text-align: center; }
+        .print-table th, .print-table td { border: 1px solid #ccc; padding: 12px; text-align: center; vertical-align: middle; }
         .print-table th { background-color: #f4f4f4 !important; -webkit-print-color-adjust: exact; }
         .product-img { max-height: 80px; object-fit: contain; }
     }
-    
-    /* 평상시 웹 화면에서의 표 스타일 */
-    .print-table { width: 100%; border-collapse: collapse; background: white; }
+    .print-table { width: 100%; border-collapse: collapse; background: white; margin-bottom: 20px;}
     .print-table th, .print-table td { border: 1px solid #eee; padding: 15px; text-align: center; vertical-align: middle; }
     .print-table th { background-color: #f8f9fa; font-weight: bold; color: #333; }
-    .product-img { max-height: 90px; object-fit: contain; }
+    .product-img { max-height: 90px; object-fit: contain; border-radius: 8px;}
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 맞춤형 제품 단가 안내서")
-st.markdown("<p class='no-print' style='color:#666;'>안내가 필요한 제품을 선택하신 후 인쇄 버튼을 누르시면, 선택한 항목만 깔끔하게 출력됩니다.</p>", unsafe_allow_html=True)
+st.title("📄 약국 맞춤형 제품 단가 안내서")
+st.markdown("<p class='no-print' style='color:#666;'>원장님께 제안할 제품을 선택한 후 인쇄 버튼을 누르시면 맞춤형 단가표가 출력됩니다.</p>", unsafe_allow_html=True)
 
-# 3. 데이터 준비 (현재는 임시 이미지 링크 사용, 추후 실제 제품 이미지 주소로 변경)
-data = [
-    {"제품명": "인사돌 정(100T)", "이미지": "https://via.placeholder.com/150?text=Insadol", "주문단위": "EA", "출하가": "28,000", "구간단가": "-", "판매가": "32,000"},
-    {"제품명": "마데카솔케어 6g", "이미지": "https://via.placeholder.com/150?text=Madecasol", "주문단위": "10.0", "출하가": "4,200", "구간단가": "4,000 (30개~)", "판매가": "5,500"},
-    {"제품명": "위스콘 더블액션", "이미지": "https://via.placeholder.com/150?text=Wiscon", "주문단위": "20", "출하가": "1,540", "구간단가": "1,400 (100개~)", "판매가": "3,000"},
-    {"제품명": "사라펜 플라스타", "이미지": "https://via.placeholder.com/150?text=Sarapen", "주문단위": "50.0", "출하가": "5,200", "구간단가": "4,700 (100개~)", "판매가": "10,000 (3개)"},
-    {"제품명": "판시딜 캡슐(180C)", "이미지": "https://via.placeholder.com/150?text=Pancidil", "주문단위": "EA", "출하가": "45,000", "구간단가": "43,000 (50개~)", "판매가": "50,000"}
-]
-df = pd.DataFrame(data)
+# 3. 로컬 이미지를 HTML에서 띄우기 위한 Base64 변환 함수
+def get_image_base64(image_path):
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as img_file:
+            return f"data:image/png;base64,{base64.b64encode(img_file.read()).decode()}"
+    else:
+        # 이미지가 없을 경우 빈 공간 처리 또는 동국제약 기본 로고(선택사항)
+        return "https://via.placeholder.com/150?text=No+Image" 
 
-# 4. 인쇄할 제품 선택 (스트림릿의 멀티셀렉트 기능 활용)
+# 4. 실제 CSV 데이터 파싱 함수 (주문_템플릿.csv)
+@st.cache_data
+def load_real_data():
+    try:
+        df = pd.read_csv("주문_템플릿.csv")
+        products = []
+        # CSV의 5개 단위를 순회하며 데이터 추출
+        indices = [(0,1,2,3), (5,6,7,8), (10,11,12,13), (15,16,17,18), (20,21,22,23)]
+        
+        for row in range(len(df)):
+            for idx in indices:
+                prod = str(df.iloc[row, idx[0]]).strip()
+                if prod == 'nan' or not prod: continue
+                
+                unit = str(df.iloc[row, idx[1]]).strip()
+                if unit == 'nan': unit = "-"
+                
+                factory_price_raw = str(df.iloc[row, idx[2]]).strip()
+                selling_price = str(df.iloc[row, idx[3]]).strip()
+                
+                # 할인구간 분리 (예: 4.2/4(30~))
+                factory_price = factory_price_raw
+                discount_range = "-"
+                if '(' in factory_price_raw:
+                    parts = factory_price_raw.split('(')
+                    factory_price = parts[0]
+                    discount_range = "(" + parts[1]
+                    
+                products.append({
+                    "제품명": prod,
+                    "주문단위": unit,
+                    "출하가": factory_price,
+                    "구간단가": discount_range,
+                    "판매가": selling_price,
+                    # 제품명과 동일한 이름의 이미지 파일을 매칭합니다 (예: images/인사돌100T.png)
+                    "이미지경로": f"images/{prod}.png" 
+                })
+        return pd.DataFrame(products)
+    except Exception as e:
+        st.error(f"데이터를 불러오는 데 실패했습니다: {e}")
+        return pd.DataFrame()
+
+df = load_real_data()
+
+# 5. 제품 선택기 (158개 제품 전체 로드됨)
 st.markdown("<div class='no-print'>", unsafe_allow_html=True)
-selected_products = st.multiselect(
-    "🗂️ 안내서에 포함할 제품을 선택하세요:",
-    options=df["제품명"].tolist(),
-    default=["인사돌 정(100T)", "마데카솔케어 6g"] # 처음에 기본으로 선택되어 있을 항목
-)
-
-# 자바스크립트를 이용한 인쇄 버튼 생성 (화면에서는 보이고, 인쇄물에서는 안 보이게 처리)
-if selected_products:
-    st.components.v1.html(
-        '''
-        <button onclick="window.parent.print()" style="padding:12px 24px; background-color:#28a745; color:white; border:none; border-radius:5px; cursor:pointer; font-size:16px; font-weight:bold; width:100%;">
-            🖨️ 현재 선택된 목록 인쇄하기
-        </button>
-        ''',
-        height=60
+if not df.empty:
+    selected_products = st.multiselect(
+        "🗂️ 안내서에 포함할 제품을 검색하고 선택하세요:",
+        options=df["제품명"].tolist()
     )
+
+    if selected_products:
+        st.components.v1.html(
+            '''
+            <button onclick="window.parent.print()" style="padding:15px; background-color:#e31837; color:white; border:none; border-radius:8px; cursor:pointer; font-size:18px; font-weight:bold; width:100%; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                🖨️ 현재 선택된 맞춤 단가표 인쇄하기
+            </button>
+            ''',
+            height=70
+        )
 st.markdown("</div>", unsafe_allow_html=True)
 st.divider()
 
-# 5. 선택된 제품만 모아서 깔끔한 HTML 표로 렌더링
-if selected_products:
-    # 선택된 제품만 필터링
+# 6. 인쇄용 깔끔한 HTML 표 렌더링
+if not df.empty and selected_products:
     filtered_df = df[df["제품명"].isin(selected_products)]
     
-    # 표 그리기 시작
     table_html = "<table class='print-table'>"
-    table_html += "<thead><tr><th>제품 이미지</th><th>제품명</th><th>주문단위</th><th>기본 출하가</th><th>할인 구간단가</th><th>권장 판매가</th></tr></thead><tbody>"
+    table_html += "<thead><tr><th>제품 이미지</th><th>제품명</th><th>주문단위</th><th>기본 출하가(천원)</th><th>할인 구간단가</th><th>권장 판매가(천원)</th></tr></thead><tbody>"
     
-    # 데이터 채워넣기
     for _, row in filtered_df.iterrows():
+        img_base64 = get_image_base64(row['이미지경로'])
+        
         table_html += "<tr>"
-        table_html += f"<td><img src='{row['이미지']}' class='product-img'></td>"
+        table_html += f"<td><img src='{img_base64}' class='product-img'></td>"
         table_html += f"<td style='font-weight:bold; font-size:1.1em;'>{row['제품명']}</td>"
         table_html += f"<td>{row['주문단위']}</td>"
-        table_html += f"<td>{row['출하가']}원</td>"
-        # 할인 구간이 있을 경우 붉은색으로 눈에 띄게 강조
+        table_html += f"<td>{row['출하가']}</td>"
+        
+        # 구간단가가 있으면 붉은색으로 강조
         color = "#e31837" if row['구간단가'] != "-" else "#333"
         table_html += f"<td style='color:{color}; font-weight:bold;'>{row['구간단가']}</td>"
-        table_html += f"<td>{row['판매가']}원</td>"
+        table_html += f"<td>{row['판매가']}</td>"
         table_html += "</tr>"
         
     table_html += "</tbody></table>"
-    
-    # 스트림릿 화면에 HTML 표 출력
     st.markdown(table_html, unsafe_allow_html=True)
 else:
-    st.info("제품을 선택하시면 표가 생성됩니다.")
+    st.info("👆 위에서 제품을 선택하시면 출력용 표가 생성됩니다.")
